@@ -2,7 +2,12 @@ import requests
 import logging
 import json
 import os
-from config import MUSIC_API_BASE, BACKUP_MUSIC_API
+from config import MUSIC_API_BASE
+
+try:
+    from config import BACKUP_MUSIC_API
+except ImportError:
+    BACKUP_MUSIC_API = None
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,8 @@ def search_music(keyword):
         logger.error(f"搜索音乐异常: {e}")
         try:
             # 尝试使用备用API
+            if not BACKUP_MUSIC_API:
+                return []
             res = requests.get(f"{BACKUP_MUSIC_API}/search?keywords={keyword}", headers=build_headers())
             data = res.json()
             songs = data.get('result', {}).get('songs', [])
@@ -60,6 +67,8 @@ def get_music_url(song_id):
         logger.error(f"获取音乐URL异常: {e}")
         try:
             # 尝试使用备用API
+            if not BACKUP_MUSIC_API:
+                return ''
             res = requests.get(f"{BACKUP_MUSIC_API}/song/url?id={song_id}", headers=build_headers())
             data = res.json()
             url = data.get('data', [{}])[0].get('url', '')
@@ -78,6 +87,8 @@ def get_playlist(playlist_id):
         logger.error(f"获取歌单异常: {e}")
         try:
             # 尝试使用备用API
+            if not BACKUP_MUSIC_API:
+                return {}
             res = requests.get(f"{BACKUP_MUSIC_API}/playlist/detail?id={playlist_id}", headers=build_headers())
             data = res.json()
             return data.get('playlist', {})
@@ -95,7 +106,7 @@ def get_playlist_all_tracks(playlist_id):
             return []
         
         track_count = playlist.get('trackCount', 0)
-        print(f"歌单总歌曲数: {track_count}")
+        logger.info("歌单总歌曲数: %s", track_count)
         
         all_tracks = []
         limit = 1000  # 每次请求的最大数量
@@ -105,7 +116,7 @@ def get_playlist_all_tracks(playlist_id):
             try:
                 # 使用分页参数获取歌曲 - 只获取歌曲信息，不获取URL
                 url = f"{MUSIC_API_BASE}/playlist/track/all?id={playlist_id}&limit={limit}&offset={offset}"
-                print(f"请求分页: offset={offset}, limit={limit}")
+                logger.info("请求分页: offset=%s, limit=%s", offset, limit)
                 
                 res = requests.get(url, timeout=10, headers=build_headers())
                 if res.status_code == 200:
@@ -116,21 +127,21 @@ def get_playlist_all_tracks(playlist_id):
                         break
                     
                     all_tracks.extend(tracks)
-                    print(f"获取到 {len(tracks)} 首歌曲")
+                    logger.info("获取到 %s 首歌曲", len(tracks))
                     
                     if len(tracks) < limit:
                         break
                     
                     offset += limit
                 else:
-                    print(f"分页请求失败: {res.status_code}")
+                    logger.warning("分页请求失败: %s", res.status_code)
                     break
                     
             except Exception as e:
-                print(f"分页请求异常: {e}")
+                logger.warning("分页请求异常: %s", e)
                 break
         
-        print(f"总共获取到 {len(all_tracks)} 首歌曲")
+        logger.info("总共获取到 %s 首歌曲", len(all_tracks))
         return all_tracks
         
     except Exception as e:
@@ -144,7 +155,7 @@ def get_playlist_urls(playlist_id):
     tracks = get_playlist_all_tracks(playlist_id)
     result = []
     
-    print(f"处理 {len(tracks)} 首歌曲...")
+    logger.info("处理 %s 首歌曲...", len(tracks))
     
     for track in tracks:
         song_id = track.get('id')
@@ -162,7 +173,7 @@ def get_playlist_urls(playlist_id):
             'marker': song_marker
         })
     
-    print(f"成功处理 {len(result)} 首歌曲")
+    logger.info("成功处理 %s 首歌曲", len(result))
     return result
 
 # 格式化播放列表数据
@@ -177,7 +188,7 @@ def format_playlist_data(play_list_data):
         
         # 检查是否是歌单歌曲标记
         if file_path.startswith("PLAYLIST_SONG:"):
-            parts = file_path.split(":")
+            parts = file_path.split(":", 3)  # maxsplit=3 防止歌名含冒号
             if len(parts) >= 4:
                 song_id = parts[1]
                 song_name = parts[2]
@@ -212,7 +223,7 @@ def format_playlist_data(play_list_data):
         
         # 检查是否是歌单歌曲标记
         if file_path.startswith("PLAYLIST_SONG:"):
-            parts = file_path.split(":")
+            parts = file_path.split(":", 3)  # maxsplit=3 防止歌名含冒号
             if len(parts) >= 4:
                 song_id = parts[1]
                 song_name = parts[2]

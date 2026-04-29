@@ -1,5 +1,6 @@
 import asyncio
 import os
+import shlex
 import threading
 import time
 import logging
@@ -316,11 +317,21 @@ class PlayHandler(threading.Thread):
                 while self.guild in guild_status and guild_status[self.guild] == Status.WAIT:
                     await asyncio.sleep(2)
 
-                command = f"{ffmpeg_bin} -re -loglevel level+info -nostats -f wav -i - -map 0:a:0 -acodec libopus -ab {bitrate}k -ac 2 -ar 48000 -filter:a volume=1.0 -f tee [select=a:f=rtp:ssrc={audio_ssrc}:payload_type={audio_pt}]{rtp_url}"
+                rtp_url = c[self.rtp_url_index] if self.rtp_url_index < len(c) else c[0]
+                enc_args = [
+                    ffmpeg_bin, "-re", "-loglevel", "level+info", "-nostats",
+                    "-f", "wav", "-i", "-",
+                    "-map", "0:a:0",
+                    "-acodec", "libopus", "-ab", f"{bitrate}k",
+                    "-ac", "2", "-ar", "48000",
+                    "-filter:a", "volume=1.0",
+                    "-f", "tee",
+                    f"[select=a:f=rtp:ssrc={audio_ssrc}:payload_type={audio_pt}]{rtp_url}",
+                ]
                 if log_enabled:
-                    logger.info(f'运行 ffmpeg 命令: {command}')
-                p = await asyncio.create_subprocess_shell(
-                    command,
+                    logger.info(f'运行 ffmpeg 命令: {" ".join(enc_args)}')
+                p = await asyncio.create_subprocess_exec(
+                    *enc_args,
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE
@@ -345,8 +356,8 @@ class PlayHandler(threading.Thread):
                             # 检查是否是歌单歌曲标记，如果是则实时获取URL
                             if file.startswith("PLAYLIST_SONG:"):
                                 try:
-                                    # 解析歌单歌曲标记
-                                    parts = file.split(":")
+                                    # 解析歌单歌曲标记 — 使用 maxsplit=3 防止歌名含冒号导致解析错误
+                                    parts = file.split(":", 3)
                                     if len(parts) >= 4:
                                         song_id = parts[1]
                                         song_name = parts[2]
@@ -409,18 +420,18 @@ class PlayHandler(threading.Thread):
                             extra_command = ''
                             if 'extra' in music_info and music_info['extra']:
                                 extra_data = music_info['extra']
-                                extra_command = extra_data.get('extra_command', '')
 
-                                def pack_command(full_command, name, value):
-                                    if value:
-                                        full_command += f' -{name} "{value}"'
+                                def pack_command_safe(full_command: str, name: str, value: str | None) -> str:
+                                    """安全地拼接 ffmpeg 参数，防止 Shell 注入"""
+                                    if value and isinstance(value, str) and value.strip():
+                                        return f'{full_command} -{name} {shlex.quote(value)}'
                                     return full_command
 
                                 if isinstance(extra_data, dict):
-                                    extra_command = pack_command(extra_command, 'headers', extra_data.get('header'))
-                                    extra_command = pack_command(extra_command, 'cookies', extra_data.get('cookies'))
-                                    extra_command = pack_command(extra_command, 'user_agent', extra_data.get('user_agent'))
-                                    extra_command = pack_command(extra_command, 'referer', extra_data.get('referer'))
+                                    extra_command = pack_command_safe(extra_command, 'headers', extra_data.get('header'))
+                                    extra_command = pack_command_safe(extra_command, 'cookies', extra_data.get('cookies'))
+                                    extra_command = pack_command_safe(extra_command, 'user_agent', extra_data.get('user_agent'))
+                                    extra_command = pack_command_safe(extra_command, 'referer', extra_data.get('referer'))
 
                             ss_value = music_info.get('ss', 0)
                             
@@ -430,18 +441,22 @@ class PlayHandler(threading.Thread):
                             
                             audio_duration = 0
                             try:
-                                # 使用ffprobe获取音频时长
+                                # 使用ffprobe获取音频时长 — 安全参数传递
                                 try:
                                     from ..config import FFPROBE_PATH
                                 except ImportError:
                                     from config import FFPROBE_PATH
-                                duration_command = f'"{FFPROBE_PATH}" -v quiet -show_entries format=duration -of csv=p=0 "{file}"'
+                                duration_args = [
+                                    FFPROBE_PATH, "-v", "quiet",
+                                    "-show_entries", "format=duration",
+                                    "-of", "csv=p=0", file,
+                                ]
                                 
                                 if log_enabled:
-                                    logger.info(f'执行时长获取命令: {duration_command}')
+                                    logger.info(f'执行时长获取命令: {" ".join(duration_args)}')
                                 
-                                duration_process = await asyncio.create_subprocess_shell(
-                                    duration_command,
+                                duration_process = await asyncio.create_subprocess_exec(
+                                    *duration_args,
                                     stdout=asyncio.subprocess.PIPE,
                                     stderr=asyncio.subprocess.PIPE
                                 )
@@ -464,10 +479,13 @@ class PlayHandler(threading.Thread):
                                     if log_enabled:
                                         logger.warning(f'ffprobe无输出，尝试备用方法')
                                     
-                                    # 备用方法：使用ffmpeg获取时长
-                                    backup_command = f'{ffmpeg_bin} -i "{file}" {extra_command} -f null - 2>&1'
-                                    backup_process = await asyncio.create_subprocess_shell(
-                                        backup_command,
+                                    # 备用方法：使用 ffmpeg 获取时长（安全 exec 方式）
+                                    backup_args = [
+                                        ffmpeg_bin, "-i", file,
+                                        "-f", "null", "-",
+                                    ]
+                                    backup_process = await asyncio.create_subprocess_exec(
+                                        *backup_args,
                                         stdout=asyncio.subprocess.PIPE,
                                         stderr=asyncio.subprocess.PIPE
                                     )
@@ -509,12 +527,29 @@ class PlayHandler(threading.Thread):
                             except Exception:
                                 pass
 
-                            # FFMPEG命令 - 增加网络稳定性参数
-                            command2 = f'{ffmpeg_bin} -nostats -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -timeout 30000000 -ss {ss_value} -i "{file}" {extra_command} -filter:a volume=0.4 -acodec pcm_s16le -ac 2 -ar 48000 -f wav -y -'
                             if log_enabled:
                                 logger.info(f'正在播放文件: {file}')
-                            p2 = await asyncio.create_subprocess_shell(
-                                command2,
+                            # 解析 extra_command 为安全参数列表
+                            extra_args = shlex.split(extra_command) if extra_command else []
+                            decode_args = [
+                                ffmpeg_bin,
+                                "-nostats",
+                                "-reconnect", "1",
+                                "-reconnect_streamed", "1",
+                                "-reconnect_delay_max", "2",
+                                "-timeout", "30000000",
+                                "-ss", str(ss_value),
+                                "-i", file,
+                                *extra_args,
+                                "-filter:a", "volume=0.4",
+                                "-acodec", "pcm_s16le",
+                                "-ac", "2",
+                                "-ar", "48000",
+                                "-f", "wav",
+                                "-y", "-",
+                            ]
+                            p2 = await asyncio.create_subprocess_exec(
+                                *decode_args,
                                 stdin=asyncio.subprocess.DEVNULL,
                                 stdout=asyncio.subprocess.PIPE,
                                 stderr=asyncio.subprocess.PIPE

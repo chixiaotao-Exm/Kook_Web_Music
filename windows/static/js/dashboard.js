@@ -3,6 +3,31 @@ let currentGuildId = null;
 let currentGuildName = null;
 let currentChannelId = null;
 let socket = null;
+let isOperating = false;  // 防止重复操作
+
+// Toast 通知
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const bgClass = { success: 'bg-success', error: 'bg-danger', warning: 'bg-warning' }[type] || 'bg-info';
+    const icon = { success: 'check-circle', error: 'exclamation-circle', warning: 'exclamation-triangle' }[type] || 'info-circle';
+    const toastId = 'toast-' + Date.now();
+    const html = `
+        <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body"><i class="bi bi-${icon} me-2"></i>${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>`;
+    container.insertAdjacentHTML('beforeend', html);
+    const toastEl = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastEl, { delay: 3000 });
+    toast.show();
+    toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+}
+
+function showError(message) { showToast(message, 'error'); console.error(message); }
+function showSuccess(message) { showToast(message, 'success'); console.log(message); }
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
@@ -451,19 +476,9 @@ function bindEvents() {
     }
 }
 
-// 显示错误信息
-function showError(message) {
-    console.error(message);
-    // 使用Bootstrap的Toast或Alert组件显示错误
-    alert('错误: ' + message);
-}
-
-// 显示成功信息
-function showSuccess(message) {
-    console.log(message);
-    // 使用Bootstrap的Toast或Alert组件显示成功信息
-    alert(message);
-}
+// ============================================================
+// 播放控制函数
+// ============================================================
 
 // 加入频道
 function joinChannel(guildId, channelId) {

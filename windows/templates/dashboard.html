@@ -53,6 +53,8 @@
 </head>
 <body>
     <div class="container-fluid" style="padding-top: 20px;">
+        <!-- Toast 通知容器 -->
+        <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container"></div>
         <div class="row">
             <!-- 左侧面板 -->
             <div class="col-md-3">
@@ -88,10 +90,11 @@
                         </div>
                         <div class="d-grid gap-2">
                             <button class="btn btn-primary" id="join-btn" disabled>
-                                <i class="bi bi-mic-fill"></i> 加入频道
+                                <span class="btn-text"><i class="bi bi-mic-fill"></i> 加入频道</span>
+                                <span class="spinner-border spinner-border-sm d-none" role="status"></span>
                             </button>
                             <button class="btn btn-outline-danger" id="leave-btn" disabled>
-                                <i class="bi bi-mic-mute"></i> 离开频道
+                                <span class="btn-text"><i class="bi bi-mic-mute"></i> 离开频道</span>
                             </button>
                         </div>
                     </div>
