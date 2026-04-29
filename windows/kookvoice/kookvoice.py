@@ -111,7 +111,7 @@ class Player:
                                         'now_playing': None,
                                         'play_list': []}
         # 检查是否是歌单歌曲标记，如果是则跳过文件存在检查
-        if not music.startswith("PLAYLIST_SONG:"):
+        if not music.startswith("PLAYLIST_SONG|||"):
             if 'http' not in music:
                 if not os.path.exists(music):
                     raise ValueError('文件不存在')
@@ -317,7 +317,6 @@ class PlayHandler(threading.Thread):
                 while self.guild in guild_status and guild_status[self.guild] == Status.WAIT:
                     await asyncio.sleep(2)
 
-                rtp_url = c[self.rtp_url_index] if self.rtp_url_index < len(c) else c[0]
                 enc_args = [
                     ffmpeg_bin, "-re", "-loglevel", "level+info", "-nostats",
                     "-f", "wav", "-i", "-",
@@ -354,10 +353,10 @@ class PlayHandler(threading.Thread):
                             file = music_info['file']
 
                             # 检查是否是歌单歌曲标记，如果是则实时获取URL
-                            if file.startswith("PLAYLIST_SONG:"):
+                            if file.startswith("PLAYLIST_SONG|||"):
                                 try:
-                                    # 解析歌单歌曲标记 — 使用 maxsplit=3 防止歌名含冒号导致解析错误
-                                    parts = file.split(":", 3)
+                                    # 解析歌单歌曲标记 — 用 ||| 分隔彻底避免歌名含冒号干扰
+                                    parts = file.split("|||", 3)
                                     if len(parts) >= 4:
                                         song_id = parts[1]
                                         song_name = parts[2]

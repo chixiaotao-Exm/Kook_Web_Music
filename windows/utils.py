@@ -164,7 +164,7 @@ def get_playlist_urls(playlist_id):
         artist_name = artists[0].get('name', '') if artists else ''
         
         # 创建歌单歌曲标记，稍后实时获取URL
-        song_marker = f"PLAYLIST_SONG:{song_id}:{song_name}:{artist_name}"
+        song_marker = f"PLAYLIST_SONG|||{song_id}|||{song_name}|||{artist_name}"
         
         result.append({
             'id': song_id,
@@ -187,8 +187,8 @@ def format_playlist_data(play_list_data):
         extra_data = now_playing.get('extra', {})
         
         # 检查是否是歌单歌曲标记
-        if file_path.startswith("PLAYLIST_SONG:"):
-            parts = file_path.split(":", 3)  # maxsplit=3 防止歌名含冒号
+        if file_path.startswith("PLAYLIST_SONG|||"):
+            parts = file_path.split("|||", 3)  # maxsplit=3，用 ||| 防止歌名含冒号
             if len(parts) >= 4:
                 song_id = parts[1]
                 song_name = parts[2]
@@ -222,8 +222,8 @@ def format_playlist_data(play_list_data):
         extra_data = item.get('extra', {})
         
         # 检查是否是歌单歌曲标记
-        if file_path.startswith("PLAYLIST_SONG:"):
-            parts = file_path.split(":", 3)  # maxsplit=3 防止歌名含冒号
+        if file_path.startswith("PLAYLIST_SONG|||"):
+            parts = file_path.split("|||", 3)  # maxsplit=3，用 ||| 防止歌名含冒号
             if len(parts) >= 4:
                 song_id = parts[1]
                 song_name = parts[2]
